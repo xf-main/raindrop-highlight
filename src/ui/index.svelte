@@ -13,17 +13,30 @@
     //render highlights
     $effect(() => { apply(store.highlights) })
 
-    //re-render when window is loaded/navigated
+    //late content (images, embeds) can shift layout — re-apply a while after load
     let loadTimeout: number|undefined
-    function onWindowLoad() {
-        apply(store.highlights)
+    function scheduleReapply() {
         clearTimeout(loadTimeout)
         loadTimeout = setTimeout(() => apply(store.highlights), 3000) as any as number
     }
-    $effect.root(()=>{if (document.readyState) onWindowLoad()})
 
-    //unmount
-    $effect(()=>cleanup)
+    //re-render when window is loaded/navigated
+    function onWindowLoad() {
+        apply(store.highlights)
+        scheduleReapply()
+    }
+
+    $effect(()=>{
+        //already loaded at mount: the render effect above just applied,
+        //and the window 'load' event will never fire — only schedule the delayed pass
+        if (document.readyState == 'complete') scheduleReapply()
+
+        //unmount: also cancel the delayed re-apply, otherwise it re-renders highlights after cleanup
+        return () => {
+            clearTimeout(loadTimeout)
+            cleanup()
+        }
+    })
 </script>
 
 <svelte:window onload={onWindowLoad} onpopstate={onWindowLoad} />

@@ -16,7 +16,7 @@
 
 {#if store.nav}
 <nav role="presentation" onclick={onClick}>
-    {#each store.highlights as highlight(highlight._id)}
+    {#each store.highlights as highlight(highlight._id ?? highlight)}
         <div
             data-highlight={highlight._id}
             style="top: var(--highlight-{highlight._id}-top); --color: {colors.get(highlight.color!) || highlight.color}"

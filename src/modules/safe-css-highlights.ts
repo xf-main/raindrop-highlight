@@ -4,18 +4,21 @@
 
 const isFirefox = 'InternalError' in window
 
+//the registry can be shared with the page (main world), so every bulk
+//operation is scoped to our own keys and never touches page-owned entries
 class SafeCSSHighlights {
     #cache = new Map<string, Set<Range>>()
 
-    get size() {
-        return CSS.highlights.size
+    hasAny(match: string | RegExp) {
+        return this.#keys().some(key => this.#matches(key, match))
     }
 
-    clear() {
-        CSS.highlights.clear()
-
-        if (isFirefox)
-            this.#cache.clear()
+    clear(match: string | RegExp) {
+        for (const key of this.#keys())
+            if (this.#matches(key, match)) {
+                CSS.highlights.delete(key)
+                this.#cache.delete(key)
+            }
     }
 
     set(name: string, ...ranges: Range[]) {
@@ -25,33 +28,27 @@ class SafeCSSHighlights {
             this.#cache.set(name, new Set(ranges))
     }
 
-    get(name: string): Set<Range> | undefined {
-        if (isFirefox)
-            return this.#cache.get(name)
-        
-        return CSS.highlights.get(name) as any
-    }
-
-    has(name: string) {
-        return CSS.highlights.has(name)
-    }
-
-    delete(name: string) {
-        if (isFirefox)
-            this.#cache.delete(name)
-
-        return CSS.highlights.delete(name)
-    }
-
-    forEach(callback: (value: Set<Range>, key: string, parent: HighlightRegistry) => void) {
+    forEach(callback: (value: Set<Range>, key: string) => void, match: string | RegExp) {
         if (isFirefox) {
             this.#cache.forEach((value, key) => {
-                callback(value, key, CSS.highlights)
+                if (this.#matches(key, match)) callback(value, key)
             })
             return
         }
-        
-        CSS.highlights.forEach(callback as any)
+
+        CSS.highlights.forEach((value, key) => {
+            if (this.#matches(key, match)) callback(value as any, key)
+        })
+    }
+
+    #matches(key: string, match: string | RegExp) {
+        return typeof match == 'string' ? key.startsWith(match) : match.test(key)
+    }
+
+    #keys(): string[] {
+        if (isFirefox)
+            return [...this.#cache.keys()]
+        return [...CSS.highlights.keys()]
     }
 }
 

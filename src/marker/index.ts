@@ -57,12 +57,14 @@ export function rangeToText(range?: Range) {
         return ''
 
     var div: HTMLDivElement|undefined = document.createElement('div')
-    div.appendChild( range.cloneContents().cloneNode(true) )
+    div.appendChild( range.cloneContents() )
     //svg specific
     div.querySelectorAll('tspan').forEach(e=>e.outerHTML=`<span>${e.innerHTML}</span>`)
     div.querySelectorAll('text').forEach(e=>e.outerHTML=`<div>${e.innerHTML}</div>`)
+    //innerText needs layout, but the element doesn't have to be in the viewport
+    div.style.cssText = 'position:fixed;left:-99999px;top:0'
     document.body.appendChild(div)
-    
+
     const text = div.innerText
 
     document.body.removeChild(div)
@@ -71,16 +73,17 @@ export function rangeToText(range?: Range) {
     return text
 }
 
-export function rangePosition(range?: Range) {
-    if (!range) return
-    const text = rangeToText(range)
+export function rangePosition(range: Range) {
+    const text = rangeToText(range).trim()
     if (!text) return
 
     const [ranges] = findTextRanges([text])
     const position = ranges.findIndex(r=>{
+        //found range must lie within the selection: selections often include extra
+        //whitespace (double-click) or element-level boundaries (triple-click)
         const ss = r.compareBoundaryPoints(Range.START_TO_START, range)
         const ee = r.compareBoundaryPoints(Range.END_TO_END, range)
-        return ((ss==0 && ee==0) || (range?.collapsed && ss >= 0 && ee <= 0))
+        return ss >= 0 && ee <= 0
     })
     return position == -1 ? undefined : position
 }

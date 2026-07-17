@@ -3,16 +3,31 @@ import { createStore, type Store } from '@/store.svelte'
 import { scrollToId, getCurrentRange, resetCurrentRange } from '@/marker'
 import '@/ui/index.svelte'
 import ipc from '@/ipc'
+import type { RaindropHighlight } from '@/types'
 
 const ui = document.createElement('rdh-ui') as HTMLElement & { store: Store }
 
 (async()=>{
+    //init store first: ipc can replay queued events synchronously before returning
+    let send: Awaited<ReturnType<typeof ipc>> | undefined
+    const store = createStore(
+        highligh=>
+            send?.({ type: 'RDH_ADD', payload: highligh }),
+        highligh=>
+            send?.({ type: 'RDH_UPDATE', payload: highligh }),
+        ({ _id })=>
+            send?.({ type: 'RDH_REMOVE', payload: { _id } })
+    )
+    ui.store = store
+
     //receive events from ipc
-    const send = await ipc(event=>{
+    send = await ipc(event=>{
         switch(event.type) {
             case 'RDH_APPLY':
                 if (Array.isArray(event.payload))
-                    store.highlights = event.payload
+                    store.highlights = event.payload.filter((h): h is RaindropHighlight =>
+                        !!h && typeof h == 'object' && typeof h.text == 'string' && !!h.text.trim()
+                    )
             break
 
             case 'RDH_CONFIG':
@@ -47,7 +62,7 @@ const ui = document.createElement('rdh-ui') as HTMLElement & { store: Store }
                 if (!range) return
                 const highligh = store.find(range)
                 if (!highligh) return
-                store.upsert({ ...highligh, ...(event.payload||{}) })
+                store.upsert({ ...highligh, ...(event.payload||{}) }, range)
                 resetCurrentRange()
             }
             break
@@ -57,24 +72,13 @@ const ui = document.createElement('rdh-ui') as HTMLElement & { store: Store }
                 if (!range) return
                 const highligh = store.find(range)
                 if (!highligh) return
-                store.setDraft(highligh)
+                store.setDraft(highligh, range)
                 resetCurrentRange()
             }
             break
         }
     })
 
-    //init store
-    const store = createStore(
-        highligh=>
-            send({ type: 'RDH_ADD', payload: highligh }),
-        highligh=>
-            send({ type: 'RDH_UPDATE', payload: highligh }),
-        ({ _id })=>
-            send({ type: 'RDH_REMOVE', payload: { _id } })
-    )
-    ui.store = store
-    
     //ready to receive events
     send({ type: 'RDH_READY', payload: { url: location.href } })
 })()

@@ -9,17 +9,17 @@ export type Store = {
     readonly draft: RaindropHighlight|undefined,
 
     find: (range: Range)=>RaindropHighlight|undefined,
-    upsert: (highlight: RaindropHighlight)=>void,
+    upsert: (highlight: RaindropHighlight, range?: Range)=>void,
     remove: (highlight: RaindropHighlight)=>void,
 
-    setDraft: (highlight: RaindropHighlight)=>void,
+    setDraft: (highlight: RaindropHighlight, range?: Range)=>void,
     draftSubmit: ()=>void,
     draftCancel: ()=>void
 }
 
 export function createStore(
-    onAdd: (highlight: RaindropHighlight)=>void, 
-    onUpdate: (highlight: RaindropHighlight)=>void, 
+    onAdd: (highlight: RaindropHighlight)=>void,
+    onUpdate: (highlight: RaindropHighlight)=>void,
     onRemove: (highlight: { _id: RaindropHighlight['_id'] })=>void
 ): Store {
     //state
@@ -28,6 +28,14 @@ export function createStore(
     let pro = $state(false)
     let nav = $state(false)
     let draft: RaindropHighlight|undefined = $state(undefined)
+
+    //position (occurrence index) costs a full-document scan, so it is resolved
+    //only when a new highlight is actually saved, from the selection it came from
+    function resolvePosition(item: RaindropHighlight, range?: Range) {
+        if (item._id != undefined || item.position != undefined || !range) return
+        const position = rangePosition(range)
+        if (position != undefined) item.position = position
+    }
 
     //actions
     function find(range: Range): RaindropHighlight|undefined {
@@ -38,13 +46,10 @@ export function createStore(
         //new
         const text = rangeToText(range).trim()
         if (!text) return
-        return {
-            text,
-            position: rangePosition(range)
-        }
+        return { text }
     }
 
-    function upsert(highlight: RaindropHighlight) {
+    function upsert(highlight: RaindropHighlight, range?: Range) {
         const item: RaindropHighlight = {
             ...(typeof highlight._id == 'string' ? { _id: highlight._id } : {}),
             ...(typeof highlight.text == 'string' ? { text: highlight.text } : {}),
@@ -53,15 +58,24 @@ export function createStore(
             color: highlight.color || 'yellow',
             //ignore all unknown fields (otherwise breaks ios)
         }
-        if (!item.text) return
+        if (!item.text?.trim()) return
 
+        resolvePosition(item, range)
+
+        const textKey = item.text.toLocaleLowerCase().trim()
         const index = highlights.findIndex(h=>
-            h._id == item._id || 
-            h.text?.toLocaleLowerCase().trim() === item.text?.toLocaleLowerCase().trim()
+            (item._id != undefined && h._id == item._id) ||
+            (
+                h.text?.toLocaleLowerCase().trim() === textKey &&
+                (h.position ?? 0) == (item.position ?? 0)
+            )
         )
 
         if (index != -1){
             item._id = highlights[index]._id
+            //an update without explicit position keeps the occurrence it was anchored to
+            if (item.position == undefined && typeof highlights[index].position == 'number')
+                item.position = highlights[index].position
             highlights[index] = item
             onUpdate(item)
         } else {
@@ -76,8 +90,11 @@ export function createStore(
     }
 
     //draft actions
-    function setDraft(highlight: RaindropHighlight) {
-        draft = JSON.parse(JSON.stringify(highlight))
+    function setDraft(highlight: RaindropHighlight, range?: Range) {
+        //selection may be gone by the time the draft is submitted, so resolve position now
+        const item = { ...highlight }
+        resolvePosition(item, range)
+        draft = JSON.parse(JSON.stringify(item))
     }
 
     function draftSubmit() {

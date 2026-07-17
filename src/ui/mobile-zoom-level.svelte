@@ -6,6 +6,8 @@
         function updateZoomLevel() {
             zoomLevel = 1/(window.visualViewport?.scale||1)
         }
+        //page can already be pinch-zoomed at mount
+        updateZoomLevel()
         window.visualViewport?.addEventListener('resize', updateZoomLevel)
         return () => window.visualViewport?.removeEventListener('resize', updateZoomLevel)
     })
